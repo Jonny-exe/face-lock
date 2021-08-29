@@ -50,25 +50,49 @@ if REMAKE_DATA:
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 32, 5)
-        self.conv2 = nn.Conv2d(32, 64, 5)
-        self.conv3 = nn.Conv2d(64, 128, 5)
-        self.conv4 = nn.Conv2d(128, 256, 5)
+
+        self.a1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
+        self.a2 = nn.Conv2d(16, 16, kernel_size=3, padding=1)
+        self.a3 = nn.Conv2d(16, 32, kernel_size=3, stride=2)
+
+        self.b1 = nn.Conv2d(32, 32, kernel_size=2, padding=1)
+        self.b2 = nn.Conv2d(32, 32, kernel_size=2, padding=1)
+        self.b3 = nn.Conv2d(32, 64, kernel_size=2, stride=2)
+
+        self.c1 = nn.Conv2d(64, 64, kernel_size=2, padding=1)
+        self.c2 = nn.Conv2d(64, 64, kernel_size=2, padding=1)
+        self.c3 = nn.Conv2d(64, 128, kernel_size=2, stride=2)
+
+        self.d1 = nn.Conv2d(128, 128, kernel_size=2)
+        self.d2 = nn.Conv2d(128, 128, kernel_size=2)
+        self.d3 = nn.Conv2d(128, 10, kernel_size=2)
+
 
         self.to_linear = None
         x = torch.randn(100, 100).view(-1, 1, 100, 100)
         self.convs(x)
+        self.last = nn.Linear(self.to_linear, 4)
 
-        self.fc1 = nn.Linear(self.to_linear, 512)
-        self.fc2 = nn.Linear(512, 128)
-        self.fc3 = nn.Linear(128, 4)
-        self.fc4 = nn.Linear(4, 4)
 
     def convs(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
-        x = F.max_pool2d(F.relu(self.conv2(x)), (2, 2))
-        x = F.max_pool2d(F.relu(self.conv3(x)), (2, 2))
-        x = F.max_pool2d(F.relu(self.conv4(x)), (2, 2))
+        x = F.relu(self.a1(x))
+        x = F.relu(self.a2(x))
+        x = F.relu(self.a3(x))
+
+        # 4x4
+        x = F.relu(self.b1(x))
+        x = F.relu(self.b2(x))
+        x = F.relu(self.b3(x))
+
+        # 2x2
+        x = F.relu(self.c1(x))
+        x = F.relu(self.c2(x))
+        x = F.relu(self.c3(x))
+
+        # 1x128
+        x = F.relu(self.d1(x))
+        x = F.relu(self.d2(x))
+        x = F.relu(self.d3(x))
 
         if self.to_linear is None:
             self.to_linear = x[0].shape[1] * x[0].shape[1] * x[0].shape[2]
@@ -77,52 +101,54 @@ class Net(nn.Module):
     def forward(self, x):
         x = self.convs(x)
         x = x.view(-1, self.to_linear)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = self.fc4(x)
+        x = self.last(x)
+
         return F.softmax(x, dim=1)
 
 
-net = Net()
+class TrainModel():
 
-print(net)
+    BATCH_SIZE = 100
+    def __init__(self, net, EPOCHS=1):
+        self.net = net
+        print(self.net)
 
+        training_data = np.load("training_data.npy", allow_pickle=True)
+        self.format_data(training_data)
 
+        self.optimizer = optim.Adam(self.net.parameters(), lr=0.001)
+        self.loss_function = nn.MSELoss()
 
-optimizer = optim.Adam(net.parameters(), lr=0.001)
-loss_function = nn.MSELoss()
-training_data = np.load("training_data.npy", allow_pickle=True)
-print("Length: ", len(training_data[0][0]))
-X = torch.Tensor([i[0] for i in training_data]).view(-1, 1, 100, 100)
-X /= 255.0
-Y = torch.Tensor([i[1] for i in training_data])
-Y /= 100.0
+        self.train()
+        torch.save(self.net.state_dict(), "models/model.pth")
 
-train_X = X[100:]
-test_X = X[:100]
-
-train_Y = Y[100:]
-test_Y = Y[:100]
-
-BATCH_SIZE = 100
-EPOCHS = 1
+    def format_data(self, training_data):
+        X = torch.Tensor([i[0] for i in training_data]).view(-1, 1, 100, 100)
+        X /= 255.0
+        Y = torch.Tensor([i[1] for i in training_data])
+        Y /= 100.0
 
 
-for epoch in range(EPOCHS):
-    for i in tqdm(range(0, len(train_Y), BATCH_SIZE)):
-        batch_X = train_X[i : i + BATCH_SIZE].view(-1, 1, 100, 100)
-        batch_Y = train_Y[i : i + BATCH_SIZE]
+        self.train_X = X[self.BATCH_SIZE:]
+        self.test_X = X[:self.BATCH_SIZE]
 
-        net.zero_grad()
-        outputs = net(batch_X)
-        print(
-            f"outputs: {outputs.shape}\nbatch_Y: {batch_Y.shape}\nbatch_X: {batch_X.shape}"
-        )
-        loss = loss_function(outputs, batch_Y)
-        loss.backward()
-        optimizer.step()
-    print("Loss: ", loss)
+        self.train_Y = Y[self.BATCH_SIZE:]
+        self.test_Y = Y[:self.BATCH_SIZE]
+
+
+    def train(self):
+        for epoch in range(self.EPOCHS):
+            for i in tqdm(range(0, len(self.train_Y), self.BATCH_SIZE)):
+                batch_X = self.train_X[i : i + self.BATCH_SIZE].view(-1, 1, 100, 100)
+                batch_Y = self.train_Y[i : i + self.BATCH_SIZE]
+
+                self.net.zero_grad()
+                outputs = self.net(batch_X)
+
+                loss = self.loss_function(outputs, batch_Y)
+                loss.backward()
+                self.optimizer.step()
+            print("Loss: ", loss)
 
 
 class MyImage:
@@ -141,8 +167,15 @@ class MyImage:
                 cpixel = p[x, y]
                 self.pixels[y][x] = cpixel
 
+if __name__ == "__name__":
+    net = Net()
+    if argv[2] == "load":
+        net.load_state_dict(torch.load("models/model.pth"))
+    else:
+        net = TrainModel(net).net
 
-image = MyImage("random-image")
-print(len(image.pixels), len(image.pixels[0]))
-mpl.imshow(image.pixels, cmap="gray")
-mpl.show()
+    with torch.no_grad():
+        for i in tqdm(range(100)):
+            expected = test_Y[i]
+            network = net(test_X[i])
+        print(f"Expected: {expected}\nNetwork: {network}")

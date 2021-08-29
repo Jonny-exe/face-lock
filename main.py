@@ -3,6 +3,8 @@
 import numpy as np
 from tqdm import tqdm
 import os
+import sys
+
 from myimage import MyImage
 
 import torch
@@ -105,27 +107,17 @@ class Net(nn.Module):
 
         return F.softmax(x, dim=1)
 
+class Data():
+    def __init__(self, path="training_data.npy", BATCH_SIZE=100):
+        self.training_data = np.load(path, allow_pickle=True)
 
-class TrainModel():
+        self.BATCH_SIZE = BATCH_SIZE
+        self.format()
 
-    BATCH_SIZE = 100
-    def __init__(self, net, EPOCHS=1):
-        self.net = net
-        print(self.net)
-
-        training_data = np.load("training_data.npy", allow_pickle=True)
-        self.format_data(training_data)
-
-        self.optimizer = optim.Adam(self.net.parameters(), lr=0.001)
-        self.loss_function = nn.MSELoss()
-
-        self.train()
-        torch.save(self.net.state_dict(), "models/model.pth")
-
-    def format_data(self, training_data):
-        X = torch.Tensor([i[0] for i in training_data]).view(-1, 1, 100, 100)
+    def format(self):
+        X = torch.Tensor([i[0] for i in self.training_data]).view(-1, 1, 100, 100)
         X /= 255.0
-        Y = torch.Tensor([i[1] for i in training_data])
+        Y = torch.Tensor([i[1] for i in self.training_data])
         Y /= 100.0
 
 
@@ -136,11 +128,28 @@ class TrainModel():
         self.test_Y = Y[:self.BATCH_SIZE]
 
 
+class TrainModel():
+    def __init__(self, net, data, EPOCHS=3, BATCH_SIZE=100):
+        self.EPOCHS = EPOCHS
+        self.BATCH_SIZE = BATCH_SIZE
+
+        self.net = net
+        print(self.net)
+
+        self.data = data
+
+        self.optimizer = optim.Adam(self.net.parameters(), lr=0.001)
+        self.loss_function = nn.MSELoss()
+
+        self.train()
+        torch.save(self.net.state_dict(), "models/model.pth")
+
+
     def train(self):
-        for epoch in range(self.EPOCHS):
-            for i in tqdm(range(0, len(self.train_Y), self.BATCH_SIZE)):
-                batch_X = self.train_X[i : i + self.BATCH_SIZE].view(-1, 1, 100, 100)
-                batch_Y = self.train_Y[i : i + self.BATCH_SIZE]
+        for epoch in tqdm(range(self.EPOCHS)):
+            for i in tqdm(range(0, len(self.data.train_Y), self.BATCH_SIZE)):
+                batch_X = self.data.train_X[i : i + self.BATCH_SIZE].view(-1, 1, 100, 100)
+                batch_Y = self.data.train_Y[i : i + self.BATCH_SIZE]
 
                 self.net.zero_grad()
                 outputs = self.net(batch_X)
@@ -167,15 +176,19 @@ class MyImage:
                 cpixel = p[x, y]
                 self.pixels[y][x] = cpixel
 
-if __name__ == "__name__":
+if __name__ == "__main__":
     net = Net()
-    if argv[2] == "load":
+    data = Data()
+    if sys.argv[1] == "load":
         net.load_state_dict(torch.load("models/model.pth"))
     else:
-        net = TrainModel(net).net
+        net = TrainModel(net, data).net
 
     with torch.no_grad():
+        BATCH_SIZE = 100
+        batch_X = data.train_X[:BATCH_SIZE].view(-1, 1, 100, 100)
+        batch_Y = data.train_Y[:BATCH_SIZE] * 100
+
+        network = net(batch_X) * 100
         for i in tqdm(range(100)):
-            expected = test_Y[i]
-            network = net(test_X[i])
-        print(f"Expected: {expected}\nNetwork: {network}")
+            print(f"Expected: {batch_Y[i]}\nNetwork: {network[i]}")

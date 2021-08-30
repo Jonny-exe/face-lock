@@ -19,34 +19,8 @@ FACES_DIR = "newfaces"
 DATA_AMOUNT = 9000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
-REMAKE_DATA = False
-
-
-def make_training_data():
-    training_data = []
-    idx = 0
-    for filename in tqdm(os.listdir(FACES_DIR)):
-        f = os.path.join(FACES_DIR, filename)
-        image = MyImage(f)
-        if len(image.pixels) != 100:
-            break
-
-        pieces = [list(map(int, i.split("x"))) for i in filename.split("X")]
-        result = [pieces[0][0], pieces[0][1], pieces[1][0], pieces[1][1]]
-        training_data.append((image.pixels, result))
-        idx += 1
-
-        if idx == DATA_AMOUNT:
-            print("Max amount arrived")
-            break
-    np.random.shuffle(training_data)
-    np.save("training_data", training_data)
-
-
-if REMAKE_DATA:
-    print("Start")
-    make_training_data()
-
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(f"Device: {DEVICE}")
 
 
 class Net(nn.Module):
@@ -69,12 +43,10 @@ class Net(nn.Module):
         self.d2 = nn.Conv2d(128, 128, kernel_size=2)
         self.d3 = nn.Conv2d(128, 10, kernel_size=2)
 
-
         self.to_linear = None
         x = torch.randn(100, 100).view(-1, 1, 100, 100)
         self.convs(x)
         self.last = nn.Linear(self.to_linear, 4)
-
 
     def convs(self, x):
         x = F.relu(self.a1(x))
@@ -107,28 +79,55 @@ class Net(nn.Module):
 
         return F.softmax(x, dim=1)
 
-class Data():
-    def __init__(self, path="training_data.npy", BATCH_SIZE=100):
-        self.training_data = np.load(path, allow_pickle=True)
+
+class Data:
+    def __init__(self, path="training_data.npy", BATCH_SIZE=100, REMAKE_DATA=False):
+        if REMAKE_DATA:
+            self.make_training_data()
+        try:
+            self.training_data = np.load(path, allow_pickle=True)
+        except FileNotFoundError:
+            self.training_data = self.make_training_data()
 
         self.BATCH_SIZE = BATCH_SIZE
         self.format()
 
+    def make_training_data(self):
+        training_data = []
+        idx = 0
+        for filename in tqdm(os.listdir(FACES_DIR)):
+            f = os.path.join(FACES_DIR, filename)
+            image = MyImage(f)
+            if len(image.pixels) != 100:
+                break
+
+            pieces = [list(map(int, i.split("x"))) for i in filename.split("X")]
+            result = [pieces[0][0], pieces[0][1], pieces[1][0], pieces[1][1]]
+            training_data.append((image.pixels, result))
+            idx += 1
+
+            if idx == DATA_AMOUNT:
+                print("Max amount arrived")
+                break
+        np.random.shuffle(training_data)
+        np.save("training_data", training_data)
+        return training_data
+
     def format(self):
-        X = torch.Tensor([i[0] for i in self.training_data]).view(-1, 1, 100, 100)
+        X = torch.Tensor([i[0] for i in self.training_data]).view(-1, 1, 100, 100).to(DEVICE)
         X /= 255.0
-        Y = torch.Tensor([i[1] for i in self.training_data])
+        Y = torch.Tensor([i[1] for i in self.training_data]).to(DEVICE)
         Y /= 100.0
+        print(Y.device)
+
+        self.train_X = X[self.BATCH_SIZE :]
+        self.test_X = X[: self.BATCH_SIZE]
+
+        self.train_Y = Y[self.BATCH_SIZE :]
+        self.test_Y = Y[: self.BATCH_SIZE]
 
 
-        self.train_X = X[self.BATCH_SIZE:]
-        self.test_X = X[:self.BATCH_SIZE]
-
-        self.train_Y = Y[self.BATCH_SIZE:]
-        self.test_Y = Y[:self.BATCH_SIZE]
-
-
-class TrainModel():
+class TrainModel:
     def __init__(self, net, data, EPOCHS=3, BATCH_SIZE=100):
         self.EPOCHS = EPOCHS
         self.BATCH_SIZE = BATCH_SIZE
@@ -142,14 +141,22 @@ class TrainModel():
         self.loss_function = nn.MSELoss()
 
         self.train()
-        torch.save(self.net.state_dict(), "models/model.pth")
+        try:
+            torch.save(self.net.state_dict(), "models/model.pth")
+        except FileNotFoundError:
+            os.mkdir("models", mode = 0o666)
+            print("Created folder models")
+
 
 
     def train(self):
         for epoch in tqdm(range(self.EPOCHS)):
             for i in tqdm(range(0, len(self.data.train_Y), self.BATCH_SIZE)):
-                batch_X = self.data.train_X[i : i + self.BATCH_SIZE].view(-1, 1, 100, 100)
+                batch_X = self.data.train_X[i : i + self.BATCH_SIZE].view(
+                    -1, 1, 100, 100
+                )
                 batch_Y = self.data.train_Y[i : i + self.BATCH_SIZE]
+                # batch_Y, batch_X = batch_Y.cuda(), batch_X.cuda()
 
                 self.net.zero_grad()
                 outputs = self.net(batch_X)
@@ -176,8 +183,10 @@ class MyImage:
                 cpixel = p[x, y]
                 self.pixels[y][x] = cpixel
 
+
 if __name__ == "__main__":
     net = Net()
+    net.to(DEVICE)
     data = Data()
     if sys.argv[1] == "load":
         net.load_state_dict(torch.load("models/model.pth"))

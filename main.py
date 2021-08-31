@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import logging
 import numpy as np
 from tqdm import tqdm
 import os
@@ -12,7 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from PIL import Image
-import matplotlib.pyplot as mpl
+import matplotlib.pyplot as plt
 
 
 FACES_DIR = "newfaces"
@@ -20,6 +21,7 @@ DATA_AMOUNT = 10000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+logging.basicConfig(filename='example.log', level=logging.WARNING) # DEBUG for debugging
 print(f"Device: {DEVICE}")
 
 
@@ -27,12 +29,12 @@ class Net(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.a1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-        self.a2 = nn.Conv2d(16, 16, kernel_size=3, padding=1)
+        self.a1 = nn.Conv2d(1, 16, kernel_size=3, padding=2)
+        self.a2 = nn.Conv2d(16, 16, kernel_size=3, padding=2)
         self.a3 = nn.Conv2d(16, 32, kernel_size=3, stride=2)
 
-        self.b1 = nn.Conv2d(32, 32, kernel_size=2, padding=1)
-        self.b2 = nn.Conv2d(32, 32, kernel_size=2, padding=1)
+        self.b1 = nn.Conv2d(32, 32, kernel_size=2, padding=2)
+        self.b2 = nn.Conv2d(32, 32, kernel_size=2, padding=2)
         self.b3 = nn.Conv2d(32, 64, kernel_size=2, stride=2)
 
         self.c1 = nn.Conv2d(64, 64, kernel_size=2, padding=1)
@@ -41,50 +43,70 @@ class Net(nn.Module):
 
         self.d1 = nn.Conv2d(128, 128, kernel_size=2)
         self.d2 = nn.Conv2d(128, 128, kernel_size=2)
-        self.d3 = nn.Conv2d(128, 10, kernel_size=2)
+        self.d3 = nn.Conv2d(128, 5, kernel_size=2)
 
         self.to_linear = None
         x = torch.randn(100, 100).view(-1, 1, 100, 100)
         self.convs(x)
-        self.last = nn.Linear(self.to_linear, 100)
+        self.last1 = nn.Linear(self.to_linear, 100)
+        self.last2 = nn.Linear(self.to_linear, 100)
+        self.last3 = nn.Linear(self.to_linear, 100)
+        self.last4 = nn.Linear(self.to_linear, 100)
 
     def convs(self, x):
         x = F.relu(self.a1(x))
+        logging.debug(f"1: Size: {x.shape} {x.size()}")
         x = F.relu(self.a2(x))
+        logging.debug(f"2: Size: {x.shape} {x.size()}")
         x = F.relu(self.a3(x))
+        logging.debug(f"3: Size: {x.shape} {x.size()}")
 
         # 4x4
         x = F.relu(self.b1(x))
+        logging.debug(f"4: Size: {x.shape} {x.size()}")
         x = F.relu(self.b2(x))
-        x = F.relu(self.b3(x))
+        logging.debug(f"5: Size: {x.shape} {x.size()}")
+        x = F.max_pool2d(F.relu(self.b3(x)), (2, 2))
+        logging.debug(f"6: Size: {x.shape} {x.size()}")
 
         # 2x2
         x = F.relu(self.c1(x))
+        logging.debug(f"7: Size: {x.shape} {x.size()}")
         x = F.relu(self.c2(x))
-        x = F.relu(self.c3(x))
+        logging.debug(f"8: Size: {x.shape} {x.size()}")
+        x = F.max_pool2d(F.relu(self.c3(x)), (2, 2))
+        logging.debug(f"9: Size: {x.shape} {x.size()}")
 
         # 1x128
         x = F.relu(self.d1(x))
+        logging.debug(f"10: Size: {x.shape} {x.size()}")
         x = F.relu(self.d2(x))
+        logging.debug(f"11: Size: {x.shape} {x.size()}")
         x = F.relu(self.d3(x))
+        logging.debug(f"12: Size: {x.shape} {x.size()}")
 
         if self.to_linear is None:
-            self.to_linear = x[0].shape[1] * x[0].shape[1] * x[0].shape[2]
+            self.to_linear = x[0].shape[0] * x[0].shape[1] * x[0].shape[2]
         return x
 
     def forward(self, x):
+        logging.debug(f"0: Size: {x.shape}")
         x = self.convs(x)
+        logging.debug(f"self.to_linear: {self.to_linear}")
         x = x.view(-1, self.to_linear)
+        logging.debug(f"13: Size: {x.shape}")
 
-        x1 = self.last(x)
-        x2 = self.last(x)
-        x3 = self.last(x)
-        x4 = self.last(x)
+        x1 = self.last1(x)
+        logging.debug(f"14: Size: {x1.shape}")
+        x2 = self.last2(x)
+        x3 = self.last3(x)
+        x4 = self.last4(x)
 
         x1 = F.softmax(x1, dim=1)
         x2 = F.softmax(x2, dim=1)
         x3 = F.softmax(x3, dim=1)
         x4 = F.softmax(x4, dim=1)
+        logging.debug(f"15: Size: {x1.shape}")
 
         return [x1, x2, x3, x4]
 
@@ -144,7 +166,7 @@ class Data:
 
 
 class TrainModel:
-    def __init__(self, net, data, EPOCHS=13, BATCH_SIZE=100):
+    def __init__(self, net, data, EPOCHS=3, BATCH_SIZE=100):
         self.EPOCHS = EPOCHS
         self.BATCH_SIZE = BATCH_SIZE
 
@@ -153,7 +175,8 @@ class TrainModel:
 
         self.data = data
 
-        self.optimizer = optim.Adam(self.net.parameters(), lr=0.01)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=0.1)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=100, gamma=0.1)
         # self.optimizer = optim.SGD(self.net.parameters(), lr=0.01, momentum=0.9)
         self.loss_functions = [nn.MSELoss() for _ in range(4)]
 
@@ -167,6 +190,8 @@ class TrainModel:
 
 
     def train(self):
+        losses = []
+        idx = 0
         for epoch in tqdm(range(self.EPOCHS)):
             for i in range(0, len(self.data.train_Y), self.BATCH_SIZE):
                 batch_X = self.data.train_X[i : i + self.BATCH_SIZE].view(
@@ -185,8 +210,13 @@ class TrainModel:
                 for j in range(len(outputs)):
                     loss += self.loss_functions[j](outputs[j], batch_Y[j])
 
+                losses.append(float(loss))
                 loss.backward()
                 self.optimizer.step()
+                self.scheduler.step()
+                idx += 0
+        plt.plot(losses)
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -209,6 +239,6 @@ if __name__ == "__main__":
         print(network)
         for i in range(4):
             print("##########################", i," ####################")
-            for j in range(2):
+            for j in range(4):
                 print(f"Network  Argmax: {torch.argmax(network[i][j])}")
                 print(f"Expected Argmax: {torch.argmax(batch_Y[i][j])}")

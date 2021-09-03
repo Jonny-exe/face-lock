@@ -7,6 +7,7 @@ import os
 import sys
 
 from myimage import MyImage
+import random
 
 import torch
 import torch.nn as nn
@@ -29,44 +30,41 @@ class Net(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.c1 = nn.Conv2d(1, 32, kernel_size=5, padding=2)
-        self.c2 = nn.Conv2d(32, 32, kernel_size=5, padding=2)
-        self.c3 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
+        self.a1 = nn.Conv2d(1, 64, kernel_size=11, stride=4, padding=2)
+        self.a2 = nn.Conv2d(64, 192, kernel_size=5, padding=2)
+        self.a3 = nn.Conv2d(192, 384, kernel_size=3, padding=1)
+        self.a4 = nn.Conv2d(384, 256, kernel_size=3, padding=1)
+        self.a5 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
 
-        self.c4 = nn.Conv2d(64, 64, kernel_size=3, padding=2)
-        self.c5 = nn.Conv2d(64, 64, kernel_size=3, padding=2)
-        self.c6 = nn.Conv2d(64, 128, kernel_size=3, stride=2)
+        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2)
+        self.pool2 = nn.MaxPool2d(kernel_size=3, stride=2)
+        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=2)
 
-        self.c7 = nn.Conv2d(128, 128, kernel_size=2, padding=2)
-        self.c8 = nn.Conv2d(128, 128, kernel_size=2, padding=2)
-        self.c9 = nn.Conv2d(128, 256, kernel_size=2, stride=2)
-
-        self.pool = nn.MaxPool2d(2, 2)
-        self.drop = nn.Dropout(p=0.2)
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
 
         self.to_linear = None
-        x = torch.randn(100, 100).view(-1, 1, 100, 100)
+        x = torch.rand(1, 1, 100, 100)
         self.convs(x)
 
-        self.last1 = nn.Linear(self.to_linear, 100)
-        self.last2 = nn.Linear(self.to_linear, 100)
-        self.last3 = nn.Linear(self.to_linear, 100)
-        self.last4 = nn.Linear(self.to_linear, 100)
+        self.drop1 = nn.Dropout()
+        self.drop2 = nn.Dropout()
+
+        self.l1 = nn.Linear(self.to_linear, 4096)
+        self.l2 = nn.Linear(4096, 4096)
+
+        self.last1 = nn.Linear(4096, 100)
+        # self.last2 = nn.Linear(4096, 100)
+        # self.last3 = nn.Linear(4096, 100)
+        # self.last4 = nn.Linear(4096, 100)
+
 
     def convs(self, x):
-        x = F.relu(self.c1(x))
-        x = F.relu(self.c2(x))
-        x = F.relu(self.c3(x))
-
-        x = self.drop(x)
-        x = F.relu(self.c4(x))
-        x = F.relu(self.c5(x))
-        x = F.relu(self.c6(x))
-
-        x = self.drop(x)
-        x = F.relu(self.c7(x))
-        x = F.relu(self.c8(x))
-        x = F.relu(self.c9(x))
+        x = self.pool1(F.relu(self.a1(x), inplace=True))
+        x = self.pool2(F.relu(self.a2(x), inplace=True))
+        x = F.relu(self.a3(x), inplace=True)
+        x = F.relu(self.a4(x), inplace=True)
+        x = self.pool3(F.relu(self.a5(x), inplace=True))
+        x = self.avgpool(x)
 
         if self.to_linear is None:
             self.to_linear = x[0].shape[0] * x[0].shape[1] * x[0].shape[2]
@@ -76,20 +74,25 @@ class Net(nn.Module):
         logging.debug(f"self.to_linear: {self.to_linear}")
         x = self.convs(x)
         x = x.view(-1, self.to_linear)
+        x = self.drop1(x)
+        x = F.relu(self.l1(x), inplace=True)
+        x = self.drop2(x)
+        x = F.relu(self.l2(x), inplace=True)
 
         x1 = self.last1(x)
-        logging.debug(f"14: Size: {x1.shape}")
-        x2 = self.last2(x)
-        x3 = self.last3(x)
-        x4 = self.last4(x)
+        # logging.debug(f"14: Size: {x1.shape}")
+        # x2 = self.last2(x)
+        # x3 = self.last3(x)
+        # x4 = self.last4(x)
 
         x1 = F.softmax(x1, dim=1)
-        x2 = F.softmax(x2, dim=1)
-        x3 = F.softmax(x3, dim=1)
-        x4 = F.softmax(x4, dim=1)
+        # x2 = F.softmax(x2, dim=1)
+        # x3 = F.softmax(x3, dim=1)
+        # x4 = F.softmax(x4, dim=1)
         logging.debug(f"15: Size: {x1.shape}")
 
-        return [x1, x2, x3, x4]
+        # return [x1, x2, x3, x4]
+        return [x1]
 
 class Data:
     def __init__(self, path="training_data.npy", BATCH_SIZE=32, REMAKE_DATA=False):
@@ -120,7 +123,12 @@ class Data:
             eye = np.eye(100)
             result = [eye[pieces[0][0]], eye[pieces[0][1]], eye[pieces[1][0]], eye[pieces[1][1]]]
 
-            training_data.append((image.pixels, result))
+            # eye = np.eye(2)
+
+            training_data.append([image.pixels, result])
+            # rand = random.randrange(2)
+            # img = np.zeros((100, 100)) if rand == 0 else np.full((100,100), 255)
+            # training_data.append([img, eye[rand]])
 
             idx += 1
 
@@ -157,14 +165,14 @@ class TrainModel:
 
         self.data = data
 
-        self.optimizer = optim.Adam(self.net.parameters(), lr=0.05)
+        self.optimizer = optim.Adam(self.net.parameters(), lr=0.001)
         # self.optimizer = optim.SGD(self.net.parameters(), lr=0.01, momentum=0.9)
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=30, gamma=0.1)
         self.loss_functions = [nn.MSELoss() for _ in range(4)]
 
         self.train()
         try:
-            torch.save(self.net.state_dict(), "models/model.pth")
+            torch.save(self.net.state_dict(), f"models/model{EPOCHS}.pth")
         except FileNotFoundError:
             os.mkdir("models", mode = 0o666)
             print("Created folder models")
@@ -180,19 +188,24 @@ class TrainModel:
                     -1, 1, 100, 100
                 ) / 255.0
 
-                batch_Y = self.data.train_Y[i : i + self.BATCH_SIZE]
+                batch_Y = torch.Tensor(self.data.train_Y[i : i + self.BATCH_SIZE]).to(DEVICE)
                 # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
-                batch_Y = torch.Tensor([[batch_Y[j][k] for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE) 
+                batch_Y = torch.Tensor([[list(batch_Y[j][k]) for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE) 
+
+                # print(batch_Y[0])
+                # print(batch_X[0][0] * 255)
+                # plt.imshow(batch_X[0][0].to("cpu") * 255, vmin=0, vmax=255, interpolation='none', cmap="gray")
+                # plt.show()
+
 
                 self.net.zero_grad()
                 outputs = self.net(batch_X) # Shape: (4, -1, 100)
 
-                loss = 0
-
-                for j in range(len(outputs)):
-                    loss += self.loss_functions[j](outputs[j], batch_Y[j])
-
+                # print(batch_X[0], outputs[0], batch_Y)
+                loss = self.loss_functions[0](outputs[0], batch_Y[0])
+                # print(loss)
                 losses.append(float(loss))
+
                 loss.backward()
                 self.optimizer.step()
                 self.scheduler.step()
@@ -209,8 +222,8 @@ if __name__ == "__main__":
     net = Net()
     net.to(DEVICE)
     data = Data()
-    if sys.argv[1] == "load":
-        net.load_state_dict(torch.load("models/model.pth"))
+    if len(sys.argv) > 1:
+        net.load_state_dict(torch.load(f"models/model{sys.argv[1]}.pth"))
     else:
         net = TrainModel(net, data).net
 
@@ -221,9 +234,11 @@ if __name__ == "__main__":
         # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
         batch_Y = torch.Tensor([[batch_Y[j][k] for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE) 
         network = net(batch_X)
-        print(batch_Y)
-        print(network)
-        for i in range(4):
+        for i in range(len(network)):
+            print(f"{network[i]} || {batch_Y[i]}")
+        for i in range(1):
             print("##########################", i," ####################")
             for j in range(4):
+            #     print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
                 print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
+

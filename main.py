@@ -17,8 +17,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 
-FACES_DIR = "newfaces"
-DATA_AMOUNT = 10000
+FACES_DIR = "newfaces_border"
+DATA_AMOUNT = 20000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -53,9 +53,9 @@ class Net(nn.Module):
         self.l2 = nn.Linear(4096, 4096)
 
         self.last1 = nn.Linear(4096, 100)
-        # self.last2 = nn.Linear(4096, 100)
-        # self.last3 = nn.Linear(4096, 100)
-        # self.last4 = nn.Linear(4096, 100)
+        self.last2 = nn.Linear(4096, 100)
+        self.last3 = nn.Linear(4096, 100)
+        self.last4 = nn.Linear(4096, 100)
 
 
     def convs(self, x):
@@ -65,6 +65,7 @@ class Net(nn.Module):
         x = F.relu(self.a4(x), inplace=True)
         x = self.pool3(F.relu(self.a5(x), inplace=True))
         x = self.avgpool(x)
+        logging.debug(f"Last conv: {x.shape}")
 
         if self.to_linear is None:
             self.to_linear = x[0].shape[0] * x[0].shape[1] * x[0].shape[2]
@@ -94,8 +95,9 @@ class Net(nn.Module):
         # return [x1, x2, x3, x4]
         return [x1]
 
+
 class Data:
-    def __init__(self, path="training_data.npy", BATCH_SIZE=32, REMAKE_DATA=False):
+    def __init__(self, path="training_data.npy", BATCH_SIZE=100, REMAKE_DATA=False):
         if REMAKE_DATA:
             self.make_training_data()
         try:
@@ -156,7 +158,7 @@ class Data:
 
 
 class TrainModel:
-    def __init__(self, net, data, EPOCHS=1, BATCH_SIZE=32):
+    def __init__(self, net, data, EPOCHS=100, BATCH_SIZE=64):
         self.EPOCHS = EPOCHS
         self.BATCH_SIZE = BATCH_SIZE
 
@@ -165,11 +167,12 @@ class TrainModel:
 
         self.data = data
 
-        self.optimizer = optim.Adam(self.net.parameters(), lr=0.001)
-        # self.optimizer = optim.SGD(self.net.parameters(), lr=0.01, momentum=0.9)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=30, gamma=0.1)
+        # self.optimizer = optim.Adam(self.net.parameters(), lr=0.01)
+        self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1000000, gamma=0.1)
         self.loss_functions = [nn.MSELoss() for _ in range(4)]
-
+        # self.loss_functions = [nn.MultiLabelMarginLoss() for _ in range(4)]
+        # self.loss_functions = [nn.L1Loss() for _ in range(4)] 
         self.train()
         try:
             torch.save(self.net.state_dict(), f"models/model{EPOCHS}.pth")
@@ -183,28 +186,35 @@ class TrainModel:
         losses = []
         idx = 0
         for epoch in tqdm(range(self.EPOCHS)):
-            for i in range(0, len(self.data.train_Y), self.BATCH_SIZE):
+            for i in tqdm(range(0, len(self.data.train_Y), self.BATCH_SIZE)):
                 batch_X = torch.Tensor(self.data.train_X[i : i + self.BATCH_SIZE]).to(DEVICE).view(
                     -1, 1, 100, 100
                 ) / 255.0
 
-                batch_Y = torch.Tensor(self.data.train_Y[i : i + self.BATCH_SIZE]).to(DEVICE)
+                # batch_Y = torch.tensor(self.data.train_Y[i : i + self.BATCH_SIZE]).to(DEVICE)
+                batch_Y = self.data.train_Y[i : i + self.BATCH_SIZE]
                 # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
-                batch_Y = torch.Tensor([[list(batch_Y[j][k]) for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE) 
+                batch_Y = torch.Tensor([[batch_Y[j][k] for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE)
 
                 # print(batch_Y[0])
                 # print(batch_X[0][0] * 255)
                 # plt.imshow(batch_X[0][0].to("cpu") * 255, vmin=0, vmax=255, interpolation='none', cmap="gray")
                 # plt.show()
 
-
                 self.net.zero_grad()
+                self.optimizer.zero_grad()
                 outputs = self.net(batch_X) # Shape: (4, -1, 100)
 
                 # print(batch_X[0], outputs[0], batch_Y)
                 loss = self.loss_functions[0](outputs[0], batch_Y[0])
                 # print(loss)
                 losses.append(float(loss))
+                if i % 100 == 0:
+                    print(torch.argmax(batch_Y))
+                    print(torch.argmax(outputs[0]))
+                    print(float(loss))
+                    pass
+
 
                 loss.backward()
                 self.optimizer.step()
@@ -228,17 +238,22 @@ if __name__ == "__main__":
         net = TrainModel(net, data).net
 
     with torch.no_grad():
-        BATCH_SIZE = 100
-        batch_X = torch.Tensor(data.test_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
-        batch_Y = data.test_Y[:BATCH_SIZE]
+        BATCH_SIZE = 64
+        # batch_X = torch.Tensor(data.test_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
+        batch_X = torch.Tensor(data.train_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
+        batch_Y = data.train_Y[:BATCH_SIZE]
         # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
         batch_Y = torch.Tensor([[batch_Y[j][k] for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE) 
         network = net(batch_X)
+        print(f"network: {network[0][0][39]}, {network[0][1][39]}, {network[0][2][39]}")
+        print(network[0].shape)
         for i in range(len(network)):
             print(f"{network[i]} || {batch_Y[i]}")
-        for i in range(1):
+            print(f"{torch.argmax(network[i])} || {torch.argmax(batch_Y[i])}")
+        for i in range(10):
             print("##########################", i," ####################")
-            for j in range(4):
+            # for j in range(4):
             #     print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
-                print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
+                # print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
+            print(f"{torch.argmax(network[0][i])} {torch.argmax(batch_Y[0][i])} | diff: {torch.argmax(network[0][i]) - torch.argmax(batch_Y[0][i])}")
 

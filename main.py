@@ -245,7 +245,6 @@ if __name__ == "__main__":
     parser.add_argument("--load", type=str)
 
     args = parser.parse_args()
-    print(args.accumulate(args.integers))
 
     net = Net()
     net.to(DEVICE)

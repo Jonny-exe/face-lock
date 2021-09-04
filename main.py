@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import argparse
 import logging
 import numpy as np
 from tqdm import tqdm
@@ -22,7 +23,7 @@ DATA_AMOUNT = 20000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-logging.basicConfig(level=logging.WARNING) # DEBUG for debugging
+logging.basicConfig(level=logging.WARNING)  # DEBUG for debugging
 print(f"Device: {DEVICE}")
 
 
@@ -56,7 +57,6 @@ class Net(nn.Module):
         self.last2 = nn.Linear(4096, 100)
         self.last3 = nn.Linear(4096, 100)
         self.last4 = nn.Linear(4096, 100)
-
 
     def convs(self, x):
         x = self.pool1(F.relu(self.a1(x), inplace=True))
@@ -123,7 +123,12 @@ class Data:
 
             pieces = [list(map(int, i.split("x"))) for i in filename.split("X")]
             eye = np.eye(100)
-            result = [eye[pieces[0][0]], eye[pieces[0][1]], eye[pieces[1][0]], eye[pieces[1][1]]]
+            result = [
+                eye[pieces[0][0]],
+                eye[pieces[0][1]],
+                eye[pieces[1][0]],
+                eye[pieces[1][1]],
+            ]
 
             # eye = np.eye(2)
 
@@ -169,32 +174,40 @@ class TrainModel:
 
         # self.optimizer = optim.Adam(self.net.parameters(), lr=0.01)
         self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1000000, gamma=0.1)
+        self.scheduler = optim.lr_scheduler.StepLR(
+            self.optimizer, step_size=1000000, gamma=0.1
+        )
         self.loss_functions = [nn.MSELoss() for _ in range(4)]
         # self.loss_functions = [nn.MultiLabelMarginLoss() for _ in range(4)]
-        # self.loss_functions = [nn.L1Loss() for _ in range(4)] 
+        # self.loss_functions = [nn.L1Loss() for _ in range(4)]
         self.train()
         try:
             torch.save(self.net.state_dict(), f"models/model{EPOCHS}.pth")
         except FileNotFoundError:
-            os.mkdir("models", mode = 0o666)
+            os.mkdir("models", mode=0o666)
             print("Created folder models")
-
-
 
     def train(self):
         losses = []
         idx = 0
         for epoch in tqdm(range(self.EPOCHS)):
             for i in tqdm(range(0, len(self.data.train_Y), self.BATCH_SIZE)):
-                batch_X = torch.Tensor(self.data.train_X[i : i + self.BATCH_SIZE]).to(DEVICE).view(
-                    -1, 1, 100, 100
-                ) / 255.0
+                batch_X = (
+                    torch.Tensor(self.data.train_X[i : i + self.BATCH_SIZE])
+                    .to(DEVICE)
+                    .view(-1, 1, 100, 100)
+                    / 255.0
+                )
 
                 # batch_Y = torch.tensor(self.data.train_Y[i : i + self.BATCH_SIZE]).to(DEVICE)
                 batch_Y = self.data.train_Y[i : i + self.BATCH_SIZE]
                 # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
-                batch_Y = torch.Tensor([[batch_Y[j][k] for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE)
+                batch_Y = torch.Tensor(
+                    [
+                        [batch_Y[j][k] for j in range(len(batch_Y))]
+                        for k in range(len(batch_Y[0]))
+                    ]
+                ).to(DEVICE)
 
                 # print(batch_Y[0])
                 # print(batch_X[0][0] * 255)
@@ -203,7 +216,7 @@ class TrainModel:
 
                 self.net.zero_grad()
                 self.optimizer.zero_grad()
-                outputs = self.net(batch_X) # Shape: (4, -1, 100)
+                outputs = self.net(batch_X)  # Shape: (4, -1, 100)
 
                 # print(batch_X[0], outputs[0], batch_Y)
                 loss = self.loss_functions[0](outputs[0], batch_Y[0])
@@ -214,7 +227,6 @@ class TrainModel:
                     print(torch.argmax(outputs[0]))
                     print(float(loss))
                     pass
-
 
                 loss.backward()
                 self.optimizer.step()
@@ -229,21 +241,34 @@ class TrainModel:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Process some integers.")
+    parser.add_argument("--load", type=str)
+
+    args = parser.parse_args()
+    print(args.accumulate(args.integers))
+
     net = Net()
     net.to(DEVICE)
     data = Data()
-    if len(sys.argv) > 1:
-        net.load_state_dict(torch.load(f"models/model{sys.argv[1]}.pth"))
+    if args.load is not None:
+        net.load_state_dict(torch.load(args.load))
     else:
         net = TrainModel(net, data).net
 
     with torch.no_grad():
         BATCH_SIZE = 64
         # batch_X = torch.Tensor(data.test_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
-        batch_X = torch.Tensor(data.train_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
+        batch_X = (
+            torch.Tensor(data.train_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
+        )
         batch_Y = data.train_Y[:BATCH_SIZE]
         # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
-        batch_Y = torch.Tensor([[batch_Y[j][k] for j in range(len(batch_Y))] for k in range(len(batch_Y[0]))]).to(DEVICE) 
+        batch_Y = torch.Tensor(
+            [
+                [batch_Y[j][k] for j in range(len(batch_Y))]
+                for k in range(len(batch_Y[0]))
+            ]
+        ).to(DEVICE)
         network = net(batch_X)
         print(f"network: {network[0][0][39]}, {network[0][1][39]}, {network[0][2][39]}")
         print(network[0].shape)
@@ -251,9 +276,10 @@ if __name__ == "__main__":
             print(f"{network[i]} || {batch_Y[i]}")
             print(f"{torch.argmax(network[i])} || {torch.argmax(batch_Y[i])}")
         for i in range(10):
-            print("##########################", i," ####################")
+            print("##########################", i, " ####################")
             # for j in range(4):
             #     print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
-                # print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
-            print(f"{torch.argmax(network[0][i])} {torch.argmax(batch_Y[0][i])} | diff: {torch.argmax(network[0][i]) - torch.argmax(batch_Y[0][i])}")
-
+            # print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
+            print(
+                f"{torch.argmax(network[0][i])} {torch.argmax(batch_Y[0][i])} | diff: {torch.argmax(network[0][i]) - torch.argmax(batch_Y[0][i])}"
+            )

@@ -163,9 +163,22 @@ class Data:
 
 
 class TrainModel:
-    def __init__(self, net, data, EPOCHS=100, BATCH_SIZE=64):
+    def __init__(
+        self,
+        net,
+        data,
+        STARTING_EPOCHS=0,
+        EPOCHS=100,
+        BATCH_SIZE=64,
+        optimizer_state=None,
+        loss=None,
+        save=None,
+        GRAPH=False,
+    ):
         self.EPOCHS = EPOCHS
+        self.STARTING_EPOCHS = STARTING_EPOCHS
         self.BATCH_SIZE = BATCH_SIZE
+        self.GRAPH = GRAPH
 
         self.net = net
         print(self.net)
@@ -174,23 +187,40 @@ class TrainModel:
 
         # self.optimizer = optim.Adam(self.net.parameters(), lr=0.01)
         self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
+        if optimizer_state is not None:
+            self.optimizer.load_state_dict(optimizer_state)
+
         self.scheduler = optim.lr_scheduler.StepLR(
             self.optimizer, step_size=1000000, gamma=0.1
         )
+
         self.loss_functions = [nn.MSELoss() for _ in range(4)]
+
         # self.loss_functions = [nn.MultiLabelMarginLoss() for _ in range(4)]
         # self.loss_functions = [nn.L1Loss() for _ in range(4)]
-        self.train()
+        loss = self.train()
+        data_to_save = {
+            "net": self.net.state_dict(),
+            "epochs": self.EPOCHS,
+            "optimizer": self.optimizer.state_dict(),
+            "loss": loss,
+        }
         try:
-            torch.save(self.net.state_dict(), f"models/model{EPOCHS}.pth")
+            torch.save(
+                data_to_save, f"models/model{EPOCHS}.pth" if save is None else save
+            )
         except FileNotFoundError:
             os.mkdir("models", mode=0o666)
             print("Created folder models")
+            torch.save(
+                data_to_save, f"models/model{EPOCHS}.pth" if save is None else save
+            )
 
     def train(self):
         losses = []
         idx = 0
-        for epoch in tqdm(range(self.EPOCHS)):
+        loss = 0
+        for epoch in tqdm(range(self.STARTING_EPOCHS, self.EPOCHS, 1)):
             for i in tqdm(range(0, len(self.data.train_Y), self.BATCH_SIZE)):
                 batch_X = (
                     torch.Tensor(self.data.train_X[i : i + self.BATCH_SIZE])
@@ -222,27 +252,31 @@ class TrainModel:
                 loss = self.loss_functions[0](outputs[0], batch_Y[0])
                 # print(loss)
                 losses.append(float(loss))
-                if i % 100 == 0:
-                    print(torch.argmax(batch_Y))
-                    print(torch.argmax(outputs[0]))
-                    print(float(loss))
-                    pass
+                # if i % 100 == 0:
+                #     print(torch.argmax(batch_Y))
+                #     print(torch.argmax(outputs[0]))
+                #     print(float(loss))
+                #     pass
 
                 loss.backward()
                 self.optimizer.step()
                 self.scheduler.step()
                 idx += 0
-            if epoch % 10 == 0 and epoch != 0:
+            if epoch % 10 == 0 and epoch != 0 and self.GRAPH:
                 plt.plot(losses)
                 plt.show()
 
         plt.plot(losses)
         plt.show()
+        return loss
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process some integers.")
     parser.add_argument("--load", type=str)
+    parser.add_argument("--save", type=str)
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--retrain", type=bool)
 
     args = parser.parse_args()
 
@@ -250,9 +284,21 @@ if __name__ == "__main__":
     net.to(DEVICE)
     data = Data()
     if args.load is not None:
-        net.load_state_dict(torch.load(args.load))
+        model_data = torch.load(args.load)
+        print(model_data.keys())
+        net.load_state_dict(model_data["net"])
+        print(f"This will be EPOCH = {model_data['epochs'] + args.epochs}")
+        if args.retrain is not None:
+            net = TrainModel(
+                net,
+                data,
+                EPOCHS=args.epochs + model_data["epochs"],
+                STARTING_EPOCHS=model_data["epochs"],
+                optimizer_state=model_data["optimizer"],
+                save=args.save,
+            ).net
     else:
-        net = TrainModel(net, data).net
+        net = TrainModel(net, data, EPOCHS=args.epochs).net
 
     with torch.no_grad():
         BATCH_SIZE = 64

@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import subprocess
 import argparse
 import logging
 import numpy as np
@@ -18,7 +19,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 
-FACES_DIR = "newfaces_border"
+FACES_DIR = "newfaces"
 DATA_AMOUNT = 20000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
@@ -82,26 +83,28 @@ class Net(nn.Module):
 
         x1 = self.last1(x)
         # logging.debug(f"14: Size: {x1.shape}")
-        # x2 = self.last2(x)
-        # x3 = self.last3(x)
-        # x4 = self.last4(x)
+        x2 = self.last2(x)
+        x3 = self.last3(x)
+        x4 = self.last4(x)
 
         x1 = F.softmax(x1, dim=1)
-        # x2 = F.softmax(x2, dim=1)
-        # x3 = F.softmax(x3, dim=1)
-        # x4 = F.softmax(x4, dim=1)
+        x2 = F.softmax(x2, dim=1)
+        x3 = F.softmax(x3, dim=1)
+        x4 = F.softmax(x4, dim=1)
         logging.debug(f"15: Size: {x1.shape}")
 
-        # return [x1, x2, x3, x4]
-        return [x1]
+        return [x1, x2, x3, x4]
+        # return [x1]
 
 
 class Data:
-    def __init__(self, path="training_data.npy", BATCH_SIZE=100, REMAKE_DATA=False):
+    def __init__(self, path="training_data.npy", BATCH_SIZE=150, REMAKE_DATA=False):
         if REMAKE_DATA:
             self.make_training_data()
         try:
-            self.training_data = np.load(path, allow_pickle=True)
+            self.training_data = np.load(
+                f"training_data_{FACES_DIR}.npy", allow_pickle=True
+            )
             np.random.shuffle(self.training_data)
         except FileNotFoundError:
             self.training_data = self.make_training_data()
@@ -117,7 +120,7 @@ class Data:
             f = os.path.join(FACES_DIR, filename)
             image = MyImage(f)
             if idx == 0:
-                image.show_image()
+                image.show()
             if len(image.pixels) != 100:
                 break
 
@@ -143,7 +146,7 @@ class Data:
                 print("Max amount arrived")
                 break
         np.random.shuffle(training_data)
-        np.save("training_data", training_data)
+        np.save(f"training_data_{FACES_DIR}", training_data)
         return training_data
 
     def format(self):
@@ -169,7 +172,7 @@ class TrainModel:
         data,
         STARTING_EPOCHS=0,
         EPOCHS=100,
-        BATCH_SIZE=64,
+        BATCH_SIZE=150,
         optimizer_state=None,
         loss=None,
         save=None,
@@ -185,7 +188,7 @@ class TrainModel:
 
         self.data = data
 
-        # self.optimizer = optim.Adam(self.net.parameters(), lr=0.01)
+        # self.optimizer = optim.Adam(self.net.parameters(), lr=0.1)
         self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
         if optimizer_state is not None:
             self.optimizer.load_state_dict(optimizer_state)
@@ -194,10 +197,8 @@ class TrainModel:
             self.optimizer, step_size=1000000, gamma=0.1
         )
 
-        self.loss_functions = [nn.MSELoss() for _ in range(4)]
+        self.loss_functions = [nn.MSELoss().to(DEVICE) for _ in range(4)]
 
-        # self.loss_functions = [nn.MultiLabelMarginLoss() for _ in range(4)]
-        # self.loss_functions = [nn.L1Loss() for _ in range(4)]
         loss = self.train()
         data_to_save = {
             "net": self.net.state_dict(),
@@ -248,10 +249,13 @@ class TrainModel:
                 self.optimizer.zero_grad()
                 outputs = self.net(batch_X)  # Shape: (4, -1, 100)
 
-                # print(batch_X[0], outputs[0], batch_Y)
-                loss = self.loss_functions[0](outputs[0], batch_Y[0])
-                # print(loss)
+                loss = 0
+                for j in range(len(outputs)):
+                    loss += self.loss_functions[j](outputs[j], batch_Y[j])
+
                 losses.append(float(loss))
+                if i % 2000 == 0:
+                    print(float(loss))
                 # if i % 100 == 0:
                 #     print(torch.argmax(batch_Y))
                 #     print(torch.argmax(outputs[0]))
@@ -277,6 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("--save", type=str)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--retrain", type=bool)
+    parser.add_argument("--verbose", type=bool, default=True)
 
     args = parser.parse_args()
 
@@ -298,15 +303,16 @@ if __name__ == "__main__":
                 save=args.save,
             ).net
     else:
-        net = TrainModel(net, data, EPOCHS=args.epochs).net
+        net = TrainModel(net, data, EPOCHS=args.epochs, save=args.save).net
+    print(f"This will be saved in f{args.save}")
 
     with torch.no_grad():
         BATCH_SIZE = 64
         # batch_X = torch.Tensor(data.test_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
         batch_X = (
-            torch.Tensor(data.train_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
+            torch.Tensor(data.test_X[:BATCH_SIZE]).to(DEVICE).view(-1, 1, 100, 100)
         )
-        batch_Y = data.train_Y[:BATCH_SIZE]
+        batch_Y = data.test_Y[:BATCH_SIZE]
         # Convert form from -1, 4, 100 --> 4, -1, 100. Can't use view because you distroy the order
         batch_Y = torch.Tensor(
             [
@@ -315,16 +321,31 @@ if __name__ == "__main__":
             ]
         ).to(DEVICE)
         network = net(batch_X)
-        print(f"network: {network[0][0][39]}, {network[0][1][39]}, {network[0][2][39]}")
-        print(network[0].shape)
-        for i in range(len(network)):
-            print(f"{network[i]} || {batch_Y[i]}")
-            print(f"{torch.argmax(network[i])} || {torch.argmax(batch_Y[i])}")
-        for i in range(10):
-            print("##########################", i, " ####################")
-            # for j in range(4):
-            #     print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
-            # print(f"{torch.argmax(network[i][j])} {torch.argmax(batch_Y[i][j])} | diff: {torch.argmax(network[i][j]) - torch.argmax(batch_Y[i][j])}")
-            print(
-                f"{torch.argmax(network[0][i])} {torch.argmax(batch_Y[0][i])} | diff: {torch.argmax(network[0][i]) - torch.argmax(batch_Y[0][i])}"
-            )
+
+        if args.verbose:
+            for i in range(10):
+                print("##########################", i, " ####################")
+                for x in range(4):
+                    print(
+                        f"{torch.argmax(network[x][i])} {torch.argmax(batch_Y[x][i])} | diff: {torch.argmax(network[x][i]) - torch.argmax(batch_Y[x][i])}"
+                    )
+
+            # for filename in os.listdir(FACES_DIR):
+            for i in range(50):
+                f = f"{FACES_DIR}/{torch.argmax(batch_Y[0][i])}x{torch.argmax(batch_Y[1][i])}X{torch.argmax(batch_Y[2][i])}x{torch.argmax(batch_Y[3][i])}"
+                # f = os.path.join(FACES_DIR, filename)
+                image = torch.Tensor(MyImage(f).pixels).view(1, 1, 100, 100).to(DEVICE)
+                output = net(image)
+                arguments = [str(int(torch.argmax(x))) for x in output]
+
+                subprocess.run(
+                    [
+                        "./draw_border.sh",
+                        f,
+                        arguments[0],
+                        arguments[1],
+                        arguments[2],
+                        arguments[3],
+                    ]
+                )
+                output_image = MyImage("output_image.jpeg").show()

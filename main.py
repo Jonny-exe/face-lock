@@ -98,7 +98,7 @@ class Net(nn.Module):
 
 
 class Data:
-    def __init__(self, path="training_data.npy", BATCH_SIZE=150, REMAKE_DATA=False):
+    def __init__(self, path="training_data.npy", BATCH_SIZE=300, REMAKE_DATA=False):
         if REMAKE_DATA:
             self.make_training_data()
         try:
@@ -172,7 +172,7 @@ class TrainModel:
         data,
         STARTING_EPOCHS=0,
         EPOCHS=100,
-        BATCH_SIZE=150,
+        BATCH_SIZE=300,
         optimizer_state=None,
         loss=None,
         save=None,
@@ -188,7 +188,6 @@ class TrainModel:
 
         self.data = data
 
-        # self.optimizer = optim.Adam(self.net.parameters(), lr=0.1)
         self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
         if optimizer_state is not None:
             self.optimizer.load_state_dict(optimizer_state)
@@ -240,11 +239,6 @@ class TrainModel:
                     ]
                 ).to(DEVICE)
 
-                # print(batch_Y[0])
-                # print(batch_X[0][0] * 255)
-                # plt.imshow(batch_X[0][0].to("cpu") * 255, vmin=0, vmax=255, interpolation='none', cmap="gray")
-                # plt.show()
-
                 self.net.zero_grad()
                 self.optimizer.zero_grad()
                 outputs = self.net(batch_X)  # Shape: (4, -1, 100)
@@ -254,13 +248,6 @@ class TrainModel:
                     loss += self.loss_functions[j](outputs[j], batch_Y[j])
 
                 losses.append(float(loss))
-                if i % 2000 == 0:
-                    print(float(loss))
-                # if i % 100 == 0:
-                #     print(torch.argmax(batch_Y))
-                #     print(torch.argmax(outputs[0]))
-                #     print(float(loss))
-                #     pass
 
                 loss.backward()
                 self.optimizer.step()
@@ -282,6 +269,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--retrain", type=bool)
     parser.add_argument("--verbose", type=bool, default=True)
+    parser.add_argument("--testsingle", type=str)
+    parser.add_argument("--testall", type=bool, default=False)
 
     args = parser.parse_args()
 
@@ -321,31 +310,58 @@ if __name__ == "__main__":
             ]
         ).to(DEVICE)
         network = net(batch_X)
+        total_loss = 0
 
         if args.verbose:
+            idx = 0
             for i in range(10):
-                print("##########################", i, " ####################")
                 for x in range(4):
-                    print(
-                        f"{torch.argmax(network[x][i])} {torch.argmax(batch_Y[x][i])} | diff: {torch.argmax(network[x][i]) - torch.argmax(batch_Y[x][i])}"
-                    )
+                    # print(
+                    #     f"{torch.argmax(network[x][i])} {torch.argmax(batch_Y[x][i])} | diff: {torch.argmax(network[x][i]) - torch.argmax(batch_Y[x][i])}"
+                    # )
+                    total_loss += abs(torch.argmax(network[x][i]) - torch.argmax(batch_Y[x][i]))
+                    idx += 1
+            print(f"Mean error:  {total_loss / idx}")
+
 
             # for filename in os.listdir(FACES_DIR):
-            for i in range(50):
-                f = f"{FACES_DIR}/{torch.argmax(batch_Y[0][i])}x{torch.argmax(batch_Y[1][i])}X{torch.argmax(batch_Y[2][i])}x{torch.argmax(batch_Y[3][i])}"
+
+            if args.testsingle is not None:
+                # f = f"{FACES_DIR}/{torch.argmax(batch_Y[0][i])}x{torch.argmax(batch_Y[1][i])}X{torch.argmax(batch_Y[2][i])}x{torch.argmax(batch_Y[3][i])}"
+                f = args.testsingle
                 # f = os.path.join(FACES_DIR, filename)
                 image = torch.Tensor(MyImage(f).pixels).view(1, 1, 100, 100).to(DEVICE)
                 output = net(image)
                 arguments = [str(int(torch.argmax(x))) for x in output]
 
                 subprocess.run(
-                    [
-                        "./draw_border.sh",
-                        f,
-                        arguments[0],
-                        arguments[1],
-                        arguments[2],
-                        arguments[3],
-                    ]
-                )
+                        [
+                            "./draw_border.sh",
+                            f,
+                            arguments[0],
+                            arguments[1],
+                            arguments[2],
+                            arguments[3],
+                            ]
+                        )
                 output_image = MyImage("output_image.jpeg").show()
+
+            if args.testall:
+                for i in range(10):
+                    f = f"{FACES_DIR}/{torch.argmax(batch_Y[0][i])}x{torch.argmax(batch_Y[1][i])}X{torch.argmax(batch_Y[2][i])}x{torch.argmax(batch_Y[3][i])}"
+                    # f = os.path.join(FACES_DIR, filename)
+                    image = torch.Tensor(MyImage(f).pixels).view(1, 1, 100, 100).to(DEVICE)
+                    output = net(image)
+                    arguments = [str(int(torch.argmax(x))) for x in output]
+
+                    subprocess.run(
+                        [
+                            "./draw_border.sh",
+                            f,
+                            arguments[0],
+                            arguments[1],
+                            arguments[2],
+                            arguments[3],
+                        ]
+                    )
+                    output_image = MyImage("output_image.jpeg").show()

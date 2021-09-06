@@ -18,7 +18,7 @@ class MyImage:
                 cpixel = p[x, y]
                 self.pixels[y][x] = cpixel
 
-    def show_image(self):
+    def show(self):
         mpl.imshow(self.pixels, cmap="gray")
         mpl.show()
 

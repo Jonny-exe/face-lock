@@ -98,15 +98,16 @@ class Net(nn.Module):
 
 
 class Data:
-    def __init__(self, path="training_data.npy", BATCH_SIZE=300, REMAKE_DATA=False):
+    def __init__(self, path="training_data/training_data.npy", BATCH_SIZE=300, REMAKE_DATA=False):
         if REMAKE_DATA:
             self.make_training_data()
         try:
             self.training_data = np.load(
-                f"training_data_{FACES_DIR}.npy", allow_pickle=True
+                f"training_data/training_data_{FACES_DIR}.npy", allow_pickle=True
             )
             np.random.shuffle(self.training_data)
         except FileNotFoundError:
+            os.mkdir("training_data")
             self.training_data = self.make_training_data()
 
         self.BATCH_SIZE = BATCH_SIZE
@@ -365,3 +366,4 @@ if __name__ == "__main__":
                         ]
                     )
                     output_image = MyImage("output_image.jpeg").show()
+                    subprocess.run(["rm", "output_image.jpeg"])

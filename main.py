@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+from video import play_webcam
+from eprint import eprint
 import subprocess
 import argparse
 import logging
@@ -107,7 +109,7 @@ class Data:
             )
             np.random.shuffle(self.training_data)
         except FileNotFoundError:
-            os.mkdir("training_data")
+            # os.mkdir("training_data")
             self.training_data = self.make_training_data()
 
         self.BATCH_SIZE = BATCH_SIZE
@@ -147,7 +149,7 @@ class Data:
                 print("Max amount arrived")
                 break
         np.random.shuffle(training_data)
-        np.save(f"training_data_{FACES_DIR}", training_data)
+        np.save(f"training_data/training_data_{FACES_DIR}", training_data)
         return training_data
 
     def format(self):
@@ -272,12 +274,14 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", type=bool, default=True)
     parser.add_argument("--testsingle", type=str)
     parser.add_argument("--testall", type=bool, default=False)
+    parser.add_argument("--remakedata", type=bool, default=False)
+    parser.add_argument("--testlive", type=bool, default=False)
 
     args = parser.parse_args()
 
     net = Net()
     net.to(DEVICE)
-    data = Data()
+    data = Data(REMAKE_DATA=args.remakedata)
     if args.load is not None:
         model_data = torch.load(args.load)
         print(model_data.keys())
@@ -312,6 +316,9 @@ if __name__ == "__main__":
         ).to(DEVICE)
         network = net(batch_X)
         total_loss = 0
+
+        if args.testlive:
+            play_webcam(net, DEVICE)
 
         if args.verbose:
             idx = 0

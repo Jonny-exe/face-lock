@@ -20,6 +20,10 @@ Notes:
   - Learning rate scheduler steps must be higher than usual two
   - Bigger batch sizes make generalizing easier
   - Data amount is not that important
+Best config:
+  - 100 EPOCHS
+  - 500 BATCH SIZE
+  - 20 000 or more training samples
 
 ## 2
 - [ ] Make a CNN to recognize if the face is the same as the users

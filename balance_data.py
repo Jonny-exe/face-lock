@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 import os
-FACES_DIR = "newfaces"
+FACES_DIR = "newsingle"
 def check_data_is_balanced():
     data_sum = [0, 0, 0, 0]
     idx = 0

@@ -19,9 +19,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from PIL import Image
 import matplotlib.pyplot as plt
+import cv2 as cv
 
 
-FACES_DIR = "newfaces"
+FACES_DIR = "newsingle"
 DATA_AMOUNT = 20000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
@@ -34,29 +35,15 @@ class Net(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.a1 = nn.Conv2d(1, 64, kernel_size=11, stride=4, padding=2)
-        self.a2 = nn.Conv2d(64, 192, kernel_size=5, padding=2)
-        self.a3 = nn.Conv2d(192, 384, kernel_size=3, padding=1)
-        self.a4 = nn.Conv2d(384, 256, kernel_size=3, padding=1)
-        self.a5 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a6 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a7 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a8 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a9 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a10 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a11 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a12 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a13 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a14 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a15 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a16 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a17 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-        self.a18 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.a1 = nn.Conv2d(1, 20, kernel_size=5, stride=4, padding=2)
+        self.a2 = nn.Conv2d(20, 40, kernel_size=5, padding=2)
+        self.a3 = nn.Conv2d(40, 60, kernel_size=5, padding=2)
+        self.a4 = nn.Conv2d(60, 80, kernel_size=5, padding=2)
+        self.a5 = nn.Conv2d(80, 100, kernel_size=5, padding=2)
 
-        self.pool1 = nn.MaxPool2d(kernel_size=3, stride=2)
+        self.pool1 = nn.MaxPool2d(kernel_size=5, stride=2)
         self.pool2 = nn.MaxPool2d(kernel_size=3, stride=2)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool3 = nn.MaxPool2d(kernel_size=3, stride=2)
 
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
 
@@ -77,23 +64,10 @@ class Net(nn.Module):
 
     def convs(self, x):
         x = self.pool1(F.relu(self.a1(x), inplace=True))
-        x = self.pool2(F.relu(self.a2(x), inplace=True))
-        x = F.relu(self.a3(x), inplace=True)
-        x = F.relu(self.a4(x), inplace=True)
-        x = F.relu(self.a5(x), inplace=True)
-        x = F.relu(self.a6(x), inplace=True)
-        x = F.relu(self.a7(x), inplace=True)
-        x = F.relu(self.a8(x), inplace=True)
-        x = F.relu(self.a9(x), inplace=True)
-        x = self.pool3(F.relu(self.a10(x), inplace=True))
-        x = F.relu(self.a11(x), inplace=True)
-        x = F.relu(self.a12(x), inplace=True)
-        x = F.relu(self.a13(x), inplace=True)
-        x = self.pool4(F.relu(self.a14(x), inplace=True))
-        x = F.relu(self.a15(x), inplace=True)
-        x = F.relu(self.a16(x), inplace=True)
-        x = F.relu(self.a17(x), inplace=True)
-        x = F.relu(self.a18(x), inplace=True)
+        x = F.relu(self.a2(x))
+        x = self.pool2(F.relu(self.a3(x), inplace=True))
+        x = F.relu(self.a4(x))
+        x = self.pool3(F.relu(self.a5(x), inplace=True))
         x = self.avgpool(x)
         logging.debug(f"Last conv: {x.shape}")
 
@@ -123,11 +97,10 @@ class Net(nn.Module):
         logging.debug(f"15: Size: {x1.shape}")
 
         return [x1, x2, x3, x4]
-        # return [x1]
 
 
 class Data:
-    def __init__(self, path="training_data/training_data.npy", BATCH_SIZE=300, REMAKE_DATA=False):
+    def __init__(self, path="training_data/training_data.npy", BATCH_SIZE=100, REMAKE_DATA=False):
         if REMAKE_DATA:
             self.make_training_data()
         try:
@@ -201,8 +174,9 @@ class TrainModel:
         net,
         data,
         STARTING_EPOCHS=0,
-        EPOCHS=100,
-        BATCH_SIZE=300,
+        EPOCHS=32,
+        # BATCH_SIZE=300,
+        BATCH_SIZE=1,
         optimizer_state=None,
         loss=None,
         save=None,
@@ -219,11 +193,13 @@ class TrainModel:
         self.data = data
 
         self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
+        # self.optimizer = optim.SGD(self.net.parameters(), lr=0.01, momentum=0.9)
         if optimizer_state is not None:
             self.optimizer.load_state_dict(optimizer_state)
 
         self.scheduler = optim.lr_scheduler.StepLR(
             self.optimizer, step_size=1000000, gamma=0.1
+            # self.optimizer, step_size=30, gamma=0.1
         )
 
         self.loss_functions = [nn.MSELoss().to(DEVICE) for _ in range(4)]
@@ -252,12 +228,8 @@ class TrainModel:
         loss = 0
         for epoch in tqdm(range(self.STARTING_EPOCHS, self.EPOCHS, 1)):
             for i in tqdm(range(0, len(self.data.train_Y), self.BATCH_SIZE)):
-                batch_X = (
-                    torch.Tensor(self.data.train_X[i : i + self.BATCH_SIZE])
-                    .to(DEVICE)
-                    .view(-1, 1, 100, 100)
-                    / 255.0
-                )
+
+
 
                 # batch_Y = torch.tensor(self.data.train_Y[i : i + self.BATCH_SIZE]).to(DEVICE)
                 batch_Y = self.data.train_Y[i : i + self.BATCH_SIZE]
@@ -269,6 +241,28 @@ class TrainModel:
                     ]
                 ).to(DEVICE)
 
+
+
+                batch_X = (
+                    torch.Tensor(self.data.train_X[i : i + self.BATCH_SIZE])
+                    .to(DEVICE)
+                    .view(-1, 1, 100, 100)
+                    # / 255.0
+                )
+
+                if idx == 0:
+                    print(torch.argmax(batch_Y[0][0]))
+                    print(torch.argmax(batch_Y[1][0]))
+                    print(torch.argmax(batch_Y[2][0]))
+                    print(torch.argmax(batch_Y[3][0]))
+                    print(np.array(batch_X[0][0].to("cpu")))
+                    plt.imshow(np.array(batch_X[0][0].to("cpu")), cmap="gray")
+                    plt.show()
+                    # cv.waitKey(0)
+                    # cv.destroyAllWindows()
+                batch_X /= 255.0
+
+
                 self.net.zero_grad()
                 self.optimizer.zero_grad()
                 outputs = self.net(batch_X)  # Shape: (4, -1, 100)
@@ -276,13 +270,20 @@ class TrainModel:
                 loss = 0
                 for j in range(len(outputs)):
                     loss += self.loss_functions[j](outputs[j], batch_Y[j])
+                    if idx == 0 or idx == 1000 or idx == 4000 or idx == 6000 or idx == 5000 or idx == 10000 or idx == 8000:
+                        print(torch.argmax(outputs[j][0]), outputs[j][0][torch.argmax(outputs[j][0])])
+                        print(torch.argmax(batch_Y[j][0]), batch_Y[j][0][torch.argmax(batch_Y[j][0])])
+                        print(loss)
+
+
+                assert loss > 0 and loss < 1
 
                 losses.append(float(loss))
 
                 loss.backward()
                 self.optimizer.step()
                 self.scheduler.step()
-                idx += 0
+                idx += 1
             if epoch % 10 == 0 and epoch != 0 and self.GRAPH:
                 plt.plot(losses)
                 plt.show()

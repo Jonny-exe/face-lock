@@ -9,5 +9,5 @@ R5="$5"
 R6=$(($R1+$R4))
 R7=$(($R5+$R2))
 
-convert "$FILENAME" -alpha on -fill "#00000000" -stroke black \
+convert "$FILENAME" -alpha on -fill "#00000000" -stroke "red" \
     -draw "rectangle $R1,$R2 $R6,$R7" "output_image.jpeg"

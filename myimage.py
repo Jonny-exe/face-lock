@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 from PIL import Image
 import matplotlib.pyplot as mpl
+import matplotlib
+matplotlib.use('TkAgg')
 
 class MyImage:
     def __init__(self, image_path):

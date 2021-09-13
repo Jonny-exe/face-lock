@@ -23,7 +23,7 @@ import cv2 as cv
 
 
 FACES_DIR = "newsingle"
-DATA_AMOUNT = 40000
+DATA_AMOUNT = 5000
 IMG_WIDTH = 100
 IMG_HEIGHT = 100
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -59,14 +59,12 @@ class Net(nn.Module):
 
         self.last1 = nn.Linear(4096, 100)
         self.last2 = nn.Linear(4096, 100)
-        self.last3 = nn.Linear(4096, 100)
-        self.last4 = nn.Linear(4096, 100)
 
     def convs(self, x):
         x = self.pool1(F.relu(self.a1(x), inplace=True))
-        x = self.pool2(F.relu(self.a2(x), inplace=True))
-        x = F.relu(self.a3(x), inplace=True)
-        x = F.relu(self.a4(x), inplace=True)
+        x = F.relu(self.a2(x))
+        x = self.pool2(F.relu(self.a3(x), inplace=True))
+        x = F.relu(self.a4(x))
         x = self.pool3(F.relu(self.a5(x), inplace=True))
         x = self.avgpool(x)
         logging.debug(f"Last conv: {x.shape}")
@@ -76,6 +74,7 @@ class Net(nn.Module):
         return x
 
     def forward(self, x):
+        logging.debug(f"self.to_linear: {self.to_linear}")
         x = self.convs(x)
         x = x.view(-1, self.to_linear)
         x = F.relu(self.l1(self.drop1(x)), inplace=True)
@@ -83,19 +82,16 @@ class Net(nn.Module):
 
         x1 = self.last1(x)
         x2 = self.last2(x)
-        x3 = self.last3(x)
-        x4 = self.last4(x)
 
         x1 = F.softmax(x1, dim=1)
         x2 = F.softmax(x2, dim=1)
-        x3 = F.softmax(x3, dim=1)
-        x4 = F.softmax(x4, dim=1)
+        logging.debug(f"15: Size: {x1.shape}")
 
-        return [x1, x2, x3, x4]
+        return [x1, x2]
 
 
 class Data:
-    def __init__(self, path="training_data/training_data.npy", BATCH_SIZE=100, REMAKE_DATA=False):
+    def __init__(self, path="training_data/training_data.npy", BATCH_SIZE=10, REMAKE_DATA=False):
         if REMAKE_DATA:
             self.make_training_data()
         try:
@@ -170,30 +166,32 @@ class TrainModel:
         data,
         STARTING_EPOCHS=0,
         EPOCHS=32,
+        turn=2,
         # BATCH_SIZE=300,
-        BATCH_SIZE=2,
+        BATCH_SIZE=4,
         optimizer_state=None,
         loss=None,
         save=None,
         GRAPH=False,
     ):
+        assert turn == 2 or turn == 0
+        self.turn = turn
         self.EPOCHS = EPOCHS
         self.STARTING_EPOCHS = STARTING_EPOCHS
         self.BATCH_SIZE = BATCH_SIZE
         self.GRAPH = GRAPH
 
         self.net = net
-        print(self.net)
 
         self.data = data
 
-        self.optimizer = optim.SGD(self.net.parameters(), lr=0.1, momentum=0.9)
-        # self.optimizer = optim.SGD(self.net.parameters(), lr=0.01, momentum=0.9)
+        self.optimizer = optim.SGD(self.net.parameters(), lr=0.01, momentum=0.9)
+
         if optimizer_state is not None:
             self.optimizer.load_state_dict(optimizer_state)
 
         self.scheduler = optim.lr_scheduler.StepLR(
-            self.optimizer, step_size=1_000_000, gamma=0.1
+            self.optimizer, step_size=1000000, gamma=0.1
             # self.optimizer, step_size=30, gamma=0.1
         )
 
@@ -264,7 +262,7 @@ class TrainModel:
 
                 loss = 0
                 for j in range(len(outputs)):
-                    loss += self.loss_functions[j](outputs[j], batch_Y[j])
+                    loss += self.loss_functions[j](outputs[j], batch_Y[j+self.turn])
                     if idx == 0 or idx == 1000 or idx == 4000 or idx == 6000 or idx == 5000 or idx == 10000 or idx == 8000:
                         print(torch.argmax(outputs[j][0]), outputs[j][0][torch.argmax(outputs[j][0])])
                         print(torch.argmax(batch_Y[j][0]), batch_Y[j][0][torch.argmax(batch_Y[j][0])])
@@ -320,7 +318,8 @@ if __name__ == "__main__":
                 save=args.save,
             ).net
     else:
-        net = TrainModel(net, data, EPOCHS=args.epochs, save=args.save).net
+        net_x = TrainModel(net, data, EPOCHS=args.epochs, save=args.save, turn=0).net
+        net_y = TrainModel(net, data, EPOCHS=args.epochs, save=args.save, turn=2).net
     print(f"This will be saved in f{args.save}")
 
     with torch.no_grad():
@@ -337,7 +336,10 @@ if __name__ == "__main__":
                 for k in range(len(batch_Y[0]))
             ]
         ).to(DEVICE)
-        network = net(batch_X)
+
+        out_x = net_x(batch_X)
+        out_y = net_y(batch_X)
+        outputs = [out_x[0], out_x[1], out_y[0], out_y[1]]
         total_loss = 0
 
         if args.testlive:
@@ -350,7 +352,7 @@ if __name__ == "__main__":
                     # print(
                     #     f"{torch.argmax(network[x][i])} {torch.argmax(batch_Y[x][i])} | diff: {torch.argmax(network[x][i]) - torch.argmax(batch_Y[x][i])}"
                     # )
-                    total_loss += abs(torch.argmax(network[x][i]) - torch.argmax(batch_Y[x][i]))
+                    total_loss += abs(torch.argmax(outputs[x][i]) - torch.argmax(batch_Y[x][i]))
                     idx += 1
             print(f"Mean error:  {total_loss / idx}")
 
@@ -382,7 +384,9 @@ if __name__ == "__main__":
                     f = f"{FACES_DIR}/{torch.argmax(batch_Y[0][i])}x{torch.argmax(batch_Y[1][i])}X{torch.argmax(batch_Y[2][i])}x{torch.argmax(batch_Y[3][i])}"
                     # f = os.path.join(FACES_DIR, filename)
                     image = torch.Tensor(MyImage(f).pixels).view(1, 1, 100, 100).to(DEVICE)
-                    output = net(image)
+                    out_x = net_x(image)
+                    out_y = net_y(image)
+                    output = [out_x[0], out_x[1], out_y[0], out_y[1]]
                     arguments = [str(int(torch.argmax(x))) for x in output]
 
                     subprocess.run(

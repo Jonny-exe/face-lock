@@ -28,6 +28,9 @@ do
  R1=$(( $RANDOM % (100 - $R4) ))
  R2=$(( $RANDOM % (100 - $R5) ))
  convert "$DIR_FACES/$f" -resize "${R4}x${R5}" "$DIR_FACES/$f";
+
+ R4=$(($R4 + $R1))
+ R5=$(($R5 + $R2))
  convert -composite -geometry "+$R1+$R2" "$DIR_BEACHES/$R3.jpg" "$DIR_FACES/$f" "$DIR_NEWFACES/${R1}x${R2}X${R4}x${R5}";
 done
 echo "Joined beaches and faces!"
@@ -50,6 +53,7 @@ echo "Joining faces and backgrounds..."
 for f in $(ls $DIR_FACES)
 do
  
+ # Random color
  R3=$(( $RANDOM % ($(ls -l "$DIR_COLORS" | wc -l) - 1) + 1 ))
 
  # Random size
@@ -60,6 +64,9 @@ do
  R1=$(( $RANDOM % (100 - $R4) ))
  R2=$(( $RANDOM % (100 - $R5) ))
  convert "$DIR_FACES/$f" -resize "${R4}x${R5}" "$DIR_FACES/$f";
+
+ R4=$(($R4 + $R1))
+ R5=$(($R5 + $R2))
  convert -composite -geometry "+$R1+$R2" "$DIR_COLORS/$R3.png" "$DIR_FACES/$f" "$DIR_NEWFACES/${R1}x${R2}X${R4}x${R5}";
 done
 echo "Joined faces and backgrounds!"
